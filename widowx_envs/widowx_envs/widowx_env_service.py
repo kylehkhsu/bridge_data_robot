@@ -33,7 +33,9 @@ class WidowXConfigs:
         "start_state": [0.3, 0.0, 0.15, 0, 0, 0, 1], # pose when reset is called
         "skip_move_to_neutral": False,
         "return_full_image": False,
-        "camera_topics": [{"name": "/blue/image_raw"}],
+        # "camera_topics": [{"name": "/blue/image_raw"}],
+        "camera_topics": [{"name": "/camera0/image_raw"}],
+
     }
 
     DefaultActionConfig = ActionConfig(
@@ -199,7 +201,10 @@ class WidowXActionServer():
                 blocking=payload["blocking"],
                 step=False
             )
+            print('move and reset previous qpos')
+            print(self.bridge_env._previous_target_qpos)
             self.bridge_env._reset_previous_qpos()
+            print(self.bridge_env._previous_target_qpos)
         except Environment_Exception as e:
             print_red("Move execution error: {}".format(e))
             return WidowXStatus.EXECUTION_FAILURE
@@ -372,8 +377,9 @@ def main():
         #  - z: up
 
         # move left up
-        res = widowx_client.move(np.array([0.2, 0.1, 0.3, 0, 1.57, 1.57]))
-        assert args.test or res == WidowXStatus.SUCCESS, "move failed"
+        res = widowx_client.move(np.array([0.2, 0.1, 0.3, 0, 1.57, 1.57]), blocking=True)
+        # res = widowx_client.move(np.array([0.2, 0.1, 0.3, 0, 1.57, 1.57]))
+        # assert args.test or res == WidowXStatus.SUCCESS, "move failed"
         show_video(widowx_client, duration=1.5)
 
         # close gripper
