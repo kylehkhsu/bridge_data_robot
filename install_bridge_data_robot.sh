@@ -1,21 +1,33 @@
-#!/bin/bash
-export ROS_DISTRO=noetic
-export PROJECT_PATH=/iris/projects/sim_eval
-export WORKSPACE_BASE_PATH="/iris/projects/sim_eval/workspaces"
+PROJECT_PATH="/iris/u/kylehsu/code/Real2Sim/bridge_data_robot"
+cd ${PROJECT_PATH}
 
-# install interbotix packages
-$PROJECT_PATH/scripts/install_interbotix.sh
+SETUP_SCRIPT_PATH="${PROJECT_PATH}/setup_bridge_data_robot.sh"
+WORKSPACE_BASE_PATH="${PROJECT_PATH}/workspaces"
+INTERBOTIX_WS=${WORKSPACE_BASE_PATH}/interbotix_ws
 
-# install python dependencies
-source /opt/miniconda3/bin/activate
+export PYTHONPATH="${PYTHONPATH}:${INTERBOTIX_WS}/src/interbotix_ros_toolboxes/interbotix_xs_toolbox"
+source /opt/ros/noetic/setup.bash
+source ${INTERBOTIX_WS}/devel/setup.bash
+source /home/kylehsu/miniconda3/bin/activate
+conda create -n real_wx250s python=3.10
 conda activate real_wx250s
-pip install -r $PROJECT_PATH/bridge_data_robot/widowx_envs/requirements.txt
+pip install -r ${PROJECT_PATH}/widowx_envs/requirements.txt
 
-# build interbotix ros packages
-ln -s $PROJECT_PATH/bridge_data_robot/widowx_envs $WORKSPACE_BASE_PATH/interbotix_ws/src/
-cd $WORKSPACE_BASE_PATH/interbotix_ws
+export PYTHONPATH="${PYTHONPATH}:${INTERBOTIX_WS}/src/widowx_envs"
+
+## needed?
+#ENV ROBONETV2_ARM=wx250s
+#ENV DATA=/home/robonet/trainingdata
+#ENV EXP=/home/robonet/experiments
+#ENV REALSENSE_SERIAL=920312072629
+
+source /opt/ros/noetic/setup.bash
+source ${INTERBOTIX_WS}/devel/setup.bash
+cd ${INTERBOTIX_WS}
 catkin_make
-#touch ~/.built
+touch ${PROJECT_PATH}/.built
 
-# 2023-11-17: need to do conda install libffi==3.3 -y
-# from https://github.com/conda/conda/issues/12287
+cd ${PROJECT_PATH}
+git clone https://github.com/youliangtan/edgeml
+cd edgeml
+pip install -e .

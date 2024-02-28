@@ -9,5 +9,5 @@ fi
 
 cd
 if [ ! -f ".built" ]; then
-    cd $WORKSPACE_BASE_PATH/interbotix_ws && catkin_make && touch .built
+    cd ${INTERBOTIX_WS} && catkin_make && touch .built
 fi

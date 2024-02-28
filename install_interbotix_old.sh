@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
 
-SETUP_SCRIPT_PATH="/iris/u/kylehsu/code/Real2Sim/bridge_data_robot/setup_bridge_data_robot.sh"
-WORKSPACE_BASE_PATH="/iris/u/kylehsu/code/Real2Sim/bridge_data_robot/workspaces"
+# query user for path (with default)
+SETUP_SCRIPT_PATH_DEFAULT="/iris/projects/sim_eval/scripts/bridge_data_robot.sh"
+read -p "Enter desired setup script path (default: $SETUP_SCRIPT_PATH_DEFAULT): " SETUP_SCRIPT_PATH
+if [ -z "$SETUP_SCRIPT_PATH" ]; then
+   SETUP_SCRIPT_PATH=$SETUP_SCRIPT_PATH_DEFAULT
+fi
+echo "setup script path: $SETUP_SCRIPT_PATH"
+
+WORKSPACE_BASE_PATH_DEFAULT="/iris/projects/sim_eval/workspaces"
+read -p "Enter desired workspace base path (default: $WORKSPACE_BASE_PATH_DEFAULT): " WORKSPACE_BASE_PATH
+if [ -z "$WORKSPACE_BASE_PATH" ]; then
+   WORKSPACE_BASE_PATH=$WORKSPACE_BASE_PATH_DEFAULT
+fi
+echo "workspace base path: $WORKSPACE_BASE_PATH"
 
 ubuntu_version="$(lsb_release -r -s)"
 
@@ -17,6 +29,13 @@ else
   exit 1
 fi
 
+read -p "Install the Perception Pipeline (includes RealSense and AprilTag packages)? " resp
+if [[ $resp == [yY] || $resp == [yY][eE][sS] ]]; then
+  install_perception=true
+else
+  install_perception=false
+fi
+
 echo "Ubuntu $ubuntu_version detected. ROS-$ROS_NAME chosen for installation.";
 
 echo -e "\e[1;33m ******************************************** \e[0m"
@@ -25,9 +44,9 @@ echo -e "\e[1;33m ******************************************** \e[0m"
 sleep 4
 start_time="$(date -u +%s)"
 
-## Update the system
-#sudo apt update && sudo apt -y upgrade
-#sudo apt -y autoremove
+# Update the system
+sudo apt update && sudo apt -y upgrade
+sudo apt -y autoremove
 
 # Install some necessary core packages
 sudo apt -y install openssh-server curl
@@ -50,7 +69,7 @@ if [ $(dpkg-query -W -f='${Status}' ros-$ROS_NAME-desktop-full 2>/dev/null | gre
   if [ -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then
     sudo rm /etc/ros/rosdep/sources.list.d/20-default.list
   fi
-  echo "source /opt/ros/$ROS_NAME/setup.bash" >> ~/.bashrc
+  echo "source /opt/ros/$ROS_NAME/setup.bash" >> $SETUP_SCRIPT_PATH
   if [ $ROS_NAME != "noetic" ]; then
     sudo apt -y install python-rosdep python-rosinstall python-rosinstall-generator python-wstool build-essential
   else
@@ -63,8 +82,80 @@ else
 fi
 source /opt/ros/$ROS_NAME/setup.bash
 
+
+if [ "$install_perception" = true ]; then
+  # Step 2: Install Realsense packages
+
+  # Step 2A: Install librealsense2
+  if [ $(dpkg-query -W -f='${Status}' librealsense2 2>/dev/null | grep -c "ok installed") -eq 0 ]; then
+    echo "Installing librealsense2..."
+    sudo apt-key adv --keyserver keys.gnupg.net --recv-key F6E65AC044F831AC80A06380C8B3A55A6F3EFCDE || sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-key F6E65AC044F831AC80A06380C8B3A55A6F3EFCDE
+    sudo add-apt-repository "deb https://librealsense.intel.com/Debian/apt-repo $(lsb_release -sc) main" -u
+    if [ $ubuntu_version == "16.04" ]; then
+      version="2.40.0-0~realsense0.3813"
+    elif [ $ubuntu_version == "18.04" ]; then
+      version="2.40.0-0~realsense0.3814"
+    elif [ $ubuntu_version == "20.04" ]; then
+      version="2.40.0-0~realsense0.3815"
+    fi
+
+    sudo apt -y install librealsense2-udev-rules=${version}
+    sudo apt -y install librealsense2-dkms
+    sudo apt -y install librealsense2=${version}
+    sudo apt -y install librealsense2-gl=${version}
+    sudo apt -y install librealsense2-gl-dev=${version}
+    sudo apt -y install librealsense2-gl-dbg=${version}
+    sudo apt -y install librealsense2-net=${version}
+    sudo apt -y install librealsense2-net-dev=${version}
+    sudo apt -y install librealsense2-net-dbg=${version}
+    sudo apt -y install librealsense2-utils=${version}
+    sudo apt -y install librealsense2-dev=${version}
+    sudo apt -y install librealsense2-dbg=${version}
+    sudo apt-mark hold librealsense2*
+    sudo apt -y install ros-$ROS_NAME-ddynamic-reconfigure
+  else
+    echo "librealsense2 already installed!"
+  fi
+
+  # Step 2B: Install realsense2 ROS Wrapper
+  REALSENSE_WS=$WORKSPACE_BASE_PATH/realsense_ws
+  if [ ! -d "$REALSENSE_WS/src" ]; then
+    echo "Installing RealSense ROS Wrapper..."
+    mkdir -p $REALSENSE_WS/src
+    cd $REALSENSE_WS/src
+    git clone https://github.com/IntelRealSense/realsense-ros.git
+    cd realsense-ros/
+    git checkout 2.2.20
+    cd $REALSENSE_WS
+    catkin_make clean
+    catkin_make -DCATKIN_ENABLE_TESTING=False -DCMAKE_BUILD_TYPE=Release
+    catkin_make install
+    echo "source $REALSENSE_WS/devel/setup.bash" >> $SETUP_SCRIPT_PATH
+  else
+    echo "RealSense ROS Wrapper already installed!"
+  fi
+  source $REALSENSE_WS/devel/setup.bash
+
+  # Step 3: Install apriltag ROS Wrapper
+  APRILTAG_WS=$WORKSPACE_BASE_PATH/apriltag_ws
+  if [ ! -d "$APRILTAG_WS/src" ]; then
+    echo "Installing Apriltag ROS Wrapper..."
+    mkdir -p $APRILTAG_WS/src
+    cd $APRILTAG_WS/src
+    git clone https://github.com/AprilRobotics/apriltag.git
+    git clone https://github.com/AprilRobotics/apriltag_ros.git
+    cd $APRILTAG_WS
+    rosdep install --from-paths src --ignore-src -r -y
+    catkin_make_isolated
+    echo "source $APRILTAG_WS/devel_isolated/setup.bash" >> $SETUP_SCRIPT_PATH
+  else
+    echo "Apriltag ROS Wrapper already installed!"
+  fi
+  source $APRILTAG_WS/devel_isolated/setup.bash
+
+fi
+
 # Step 4: Install Arm packages
-#INTERBOTIX_WS=~/interbotix_ws
 INTERBOTIX_WS=$WORKSPACE_BASE_PATH/interbotix_ws
 if [ ! -d "$INTERBOTIX_WS/src" ]; then
   echo "Installing ROS packages for the Interbotix Arm..."
@@ -88,7 +179,6 @@ if [ ! -d "$INTERBOTIX_WS/src" ]; then
   cd $INTERBOTIX_WS
   rosdep install --from-paths src --ignore-src -r -y
   catkin_make
-#  echo "source $INTERBOTIX_WS/devel/setup.bash" >> ~/.bashrc
   echo "source $INTERBOTIX_WS/devel/setup.bash" >> $SETUP_SCRIPT_PATH
 else
   echo "Interbotix Arm ROS packages already installed!"
@@ -98,8 +188,6 @@ source $INTERBOTIX_WS/devel/setup.bash
 # Step 5: Setup Environment Variables
 if [ -z "$ROS_IP" ]; then
   echo "Setting up Environment Variables..."
-#  echo 'export ROS_IP=$(echo `hostname -I | cut -d" " -f1`)' >> ~/.bashrc
-#  echo -e 'if [ -z "$ROS_IP" ]; then\n\texport ROS_IP=127.0.0.1\nfi' >> ~/.bashrc
   echo 'export ROS_IP=$(echo `hostname -I | cut -d" " -f1`)' >> $SETUP_SCRIPT_PATH
   echo -e 'if [ -z "$ROS_IP" ]; then\n\texport ROS_IP=127.0.0.1\nfi' >> $SETUP_SCRIPT_PATH
 else
